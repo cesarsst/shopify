@@ -1,0 +1,36 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "contracts/Store.sol": {
+      "content": "// SPDX-License-Identifier: MIT\r\npragma solidity ^0.8.24;\r\n\r\ncontract Store {\r\n    /**\r\n     * State Variables\r\n     */\r\n    address payable public owner;\r\n    uint256 public ethValue = 5000;\r\n    mapping(uint256 => Product) public products;\r\n    mapping(uint256 => bool) public productExists;\r\n\r\n    /**\r\n     * Structs\r\n     */\r\n    struct Product {\r\n        uint256 id;\r\n        string name;\r\n        uint256 price;\r\n        uint256 countInStock;\r\n    }\r\n\r\n    /**\r\n     * Events\r\n     */\r\n    event ProductAdded(\r\n        uint256 id,\r\n        string name,\r\n        uint256 price,\r\n        uint256 countInStock\r\n    );\r\n    event ProductUpdated(\r\n        uint256 id,\r\n        string name,\r\n        uint256 price,\r\n        uint256 countInStock\r\n    );\r\n    event OwnerUpdated(address newOwner);\r\n    event ProductPurchased(uint256[] id, uint256[] quantity, address buyer);\r\n    event FundsWithdrawn(uint256 amount, address owner);\r\n\r\n    /**\r\n     * Modifiers\r\n     */\r\n    modifier onlyOwner() {\r\n        require(msg.sender == owner, \"Only the owner can perform this action\");\r\n        _;\r\n    }\r\n\r\n    constructor() {\r\n        owner = payable(msg.sender);\r\n    }\r\n\r\n    /**\r\n     * Functions\r\n     */\r\n\r\n    /**\r\n     * @dev Add a new product to the store\r\n     * @param id The ID of the product\r\n     * @param name The name of the product\r\n     * @param price The price of the product\r\n     * @param countInStock The count in stock of the product\r\n     */\r\n    function addProduct(\r\n        uint256 id,\r\n        string memory name,\r\n        uint256 price,\r\n        uint256 countInStock\r\n    ) public onlyOwner {\r\n        require(!productExists[id], \"Product with this ID already exists\");\r\n        products[id] = Product(id, name, price, countInStock);\r\n        productExists[id] = true;\r\n        emit ProductAdded(id, name, price, countInStock);\r\n    }\r\n\r\n    /**\r\n     * @dev Update an existing product in the store\r\n     * @param id The ID of the product\r\n     * @param name The name of the product\r\n     * @param price The price of the product\r\n     * @param countInStock The count in stock of the product\r\n     */\r\n    function updateProduct(\r\n        uint256 id,\r\n        string memory name,\r\n        uint256 price,\r\n        uint256 countInStock\r\n    ) public onlyOwner {\r\n        require(productExists[id], \"Product does not exist\");\r\n        products[id] = Product(id, name, price, countInStock);\r\n        emit ProductUpdated(id, name, price, countInStock);\r\n    }\r\n\r\n    /**\r\n     * @dev Update the list of products in the store\r\n     * @param newProducts The new list of products\r\n     */\r\n    function updateProductsList(\r\n        Product[] calldata newProducts\r\n    ) external onlyOwner {\r\n        require(newProducts.length > 0, \"Empty products list\");\r\n\r\n        for (uint256 i = 0; i < newProducts.length; i++) {\r\n            Product memory product = newProducts[i];\r\n            products[product.id] = product;\r\n            productExists[product.id] = true;\r\n        }\r\n    }\r\n\r\n    /**\r\n     * @dev Update the owner of the store\r\n     * @param newOwner The new owner of the store\r\n     */\r\n    function updateOwner(address payable newOwner) public onlyOwner {\r\n        owner = newOwner;\r\n        emit OwnerUpdated(newOwner);\r\n    }\r\n\r\n    /**\r\n     * @dev Update the value of ether\r\n     * @param newValue The new value of ether\r\n     * TODO: Maybe use chainlink to get the value of ether in USD or other currency in the future\r\n     */\r\n    function updateEthValue(uint256 newValue) public onlyOwner {\r\n        ethValue = newValue;\r\n    }\r\n\r\n    /**\r\n     * @dev Purchase products from the store\r\n     * @param ids The IDs of the products to purchase\r\n     * @param quantities The quantities of the products to purchase\r\n     * @notice The length of the arrays should be the same\r\n     * @notice The order of the arrays should be the same\r\n     * @notice The arrays should contain the IDs of the products to purchase\r\n     * @notice The arrays should contain the quantities of the products to purchase\r\n     */\r\n    function purchaseProducts(\r\n        uint256[] memory ids,\r\n        uint256[] memory quantities\r\n    ) public payable {\r\n        require(\r\n            ids.length == quantities.length,\r\n            \"IDs and quantities length mismatch\"\r\n        );\r\n        uint256 totalCost = 0;\r\n        for (uint256 i = 0; i < ids.length; i++) {\r\n            uint256 id = ids[i];\r\n            uint256 quantity = quantities[i];\r\n            require(productExists[id], \"Product does not exist\");\r\n            Product storage product = products[id];\r\n            require(\r\n                product.countInStock >= quantity,\r\n                \"Not enough countInStock for product\"\r\n            );\r\n            totalCost += product.price * quantity;\r\n            debitProductCountInStock(id, quantity);\r\n        }\r\n\r\n        totalCost = totalCost / ethValue; // value in eth ex: 1.44\r\n        totalCost = totalCost * 10 ** 18; // value in wei ex: 1440000000000000000\r\n        require(msg.value >= totalCost, \"Not enough ether sent\");\r\n        emit ProductPurchased(ids, quantities, msg.sender);\r\n    }\r\n\r\n    function debitProductCountInStock(\r\n        uint256 id,\r\n        uint256 quantity\r\n    ) public onlyOwner {\r\n        require(productExists[id], \"Product does not exist\");\r\n        Product storage product = products[id];\r\n        require(\r\n            product.countInStock >= quantity,\r\n            \"Not enough countInStock for product\"\r\n        );\r\n        product.countInStock -= quantity;\r\n    }\r\n\r\n    /**\r\n     * @dev Withdraw funds from the contract\r\n     */\r\n    function withdrawFunds() public onlyOwner {\r\n        uint256 balance = address(this).balance;\r\n        require(balance > 0, \"No funds to withdraw\");\r\n        payable(owner).transfer(balance);\r\n        emit FundsWithdrawn(balance, owner);\r\n    }\r\n}\r\n"
+    }
+  },
+  "settings": {
+    "evmVersion": "paris",
+    "optimizer": {
+      "enabled": false,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "storageLayout",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}
